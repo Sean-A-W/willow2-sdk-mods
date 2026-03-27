@@ -69,8 +69,6 @@ jobs:
           body: |
             Automated release of all SDK mods.
             Built from commit ${{ github.sha }}.
-
-            Mods by other authors are modified versions - see each mod's pyproject.toml for original credits.
           files: |
             .out/*.sdkmod
             .out/*.zip
