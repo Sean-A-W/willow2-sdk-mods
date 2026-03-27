@@ -68,26 +68,36 @@ The stats dict contains resolved attribute values for the weapon being viewed:
 
 ```python
 def calc_dps(stats: dict[str, float | bool]) -> float | None:
+    """Example: penalise DPS based on weapon spread (accuracy cone in degrees).
+
+    A tighter spread (lower value) means more of your damage actually lands.
+    This applies a simple accuracy factor: 1.0 at spread 0, falling off as
+    spread increases.
+    """
     fire_rate = stats["fire_rate"]
     mag_size = stats["mag_size"]
     shot_cost = stats["shot_cost"]
     reload_time = stats["reload_time"]
     damage = stats["damage"]
     projectile_count = stats["projectiles"]
-    extra_shot_chance = stats["extra_shot_chance"]
+    spread = stats["spread"]
 
     if fire_rate <= 0 or mag_size <= 0:
         return None
 
     shots_per_mag = mag_size / shot_cost
-    effective_projectiles = max(projectile_count, 1.0) * (1.0 + extra_shot_chance)
-    single_shot_damage = damage * effective_projectiles
+    single_shot_damage = damage * max(projectile_count, 1.0)
 
     time_per_mag_cycle = fire_rate * reload_time + shots_per_mag
     if time_per_mag_cycle <= 0:
         return None
 
-    return (single_shot_damage * fire_rate * shots_per_mag) / time_per_mag_cycle
+    raw_dps = (single_shot_damage * fire_rate * shots_per_mag) / time_per_mag_cycle
+
+    # Scale DPS down by spread - a sniper (~0.5) keeps ~67% of its DPS,
+    # a wide shotgun (~10) keeps only ~9%.
+    accuracy_factor = 1.0 / (1.0 + spread)
+    return raw_dps * accuracy_factor
 ```
 
 To add new attributes, add their `AttributeDefinition` path to the `WEAPON_ATTRIBUTES` dict. You can find all available attributes by running `scripts/dps_find_attrs.py` with `pyexec`.
