@@ -163,14 +163,61 @@ def _get_weapon_crit_parts(weapon: UObject) -> tuple[float, float, float, float]
     return crit_preadd, crit_pos_scale, crit_neg_scale, crit_postadd
 
 
-def _has_nonstandard_bpd(weapon: UObject) -> bool:
-    """Return True if the weapon has any BehaviorProviderDefinition (BPD).
+# Behavior class names that are known to NOT affect DPS calculations.
+# These are visual, cosmetic, parameter-setting, or projectile detonation
+# behaviors (splash detonation is already handled by _is_pure_splash).
+_HARMLESS_BEHAVIORS: set[str] = {
+    "Behavior_RunBehaviorCollection",
+    "Behavior_CompareFloat",
+    "Behavior_SetFloatParam",
+    "Behavior_SetVectorParam",
+    "Behavior_SetObjectParam",
+    "Behavior_AddInstanceData",
+    "Behavior_ChangeSpin",
+    "Behavior_Explode",
+    "ProjectileBehavior_Detonate",
+}
 
-    BPDs can live on the weapon type, the projectile definition, or on
-    individual weapon parts (barrel, accessory, etc.). Any of these may
-    introduce special firing behaviours (free shots, ammo return, bullet
-    splitting, etc.) that the DPS formula cannot account for without
-    interpreting the BPD at runtime.
+
+def _get_bpd_behavior_names(bpd: UObject) -> list[str]:
+    """Return class names of all behaviors inside a BPD."""
+    names: list[str] = []
+    try:
+        sequences = bpd.BehaviorSequences
+        if sequences is None:
+            return names
+        for seq in sequences:
+            try:
+                actions = seq.BehaviorData2
+                if actions is None:
+                    continue
+                for action in actions:
+                    try:
+                        behavior = action.Behavior
+                        if behavior is not None:
+                            names.append(str(behavior.Class.Name))
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return names
+
+
+def _bpd_has_dps_behaviors(bpd: UObject) -> bool:
+    """Return True if a BPD contains any behaviors not in the harmless set."""
+    for name in _get_bpd_behavior_names(bpd):
+        if name not in _HARMLESS_BEHAVIORS:
+            return True
+    return False
+
+
+def _has_nonstandard_bpd(weapon: UObject) -> bool:
+    """Return True if the weapon has a BPD with DPS-affecting behaviors.
+
+    Scans all BPDs on the weapon (type, projectile, parts) and checks
+    if any contain behaviors outside the known-harmless set.
     """
     try:
         definition_data = weapon.DefinitionData
@@ -181,24 +228,37 @@ def _has_nonstandard_bpd(weapon: UObject) -> bool:
     try:
         weapon_type = definition_data.WeaponTypeDefinition
         if weapon_type is not None:
-            if weapon_type.BehaviorProviderDefinition is not None:
+            bpd = weapon_type.BehaviorProviderDefinition
+            if bpd is not None and _bpd_has_dps_behaviors(bpd):
                 return True
             # Check the projectile definition
             firing_mode = weapon_type.DefaultFiringModeDefinition
             if firing_mode is not None:
                 projectile_def = firing_mode.ProjectileDefinition
                 if projectile_def is not None:
-                    if projectile_def.BehaviorProviderDefinition is not None:
+                    proj_bpd = projectile_def.BehaviorProviderDefinition
+                    if proj_bpd is not None and _bpd_has_dps_behaviors(proj_bpd):
                         return True
     except Exception:
         pass
 
-    # Check each weapon part for a BPD
+    # Check all part BPDs and custom firing modes
     for slot in _PART_SLOTS:
         try:
             part = getattr(definition_data, slot)
-            if part is not None and part.BehaviorProviderDefinition is not None:
+            if part is None:
+                continue
+            bpd = part.BehaviorProviderDefinition
+            if bpd is not None and _bpd_has_dps_behaviors(bpd):
                 return True
+            # Normal weapons don't have custom firing modes on parts.
+            # If one exists, the weapon likely has special projectile
+            # behaviour (splitting, grenades, etc.) we can't calculate.
+            try:
+                if part.CustomFiringModeDefinition is not None:
+                    return True
+            except Exception:
+                pass
         except Exception:
             continue
 
@@ -214,7 +274,8 @@ def _is_pure_splash(weapon: UObject) -> bool:
     information to calculate valid crit damage.
     """
     try:
-        weapon_type = weapon.DefinitionData.WeaponTypeDefinition
+        definition_data = weapon.DefinitionData
+        weapon_type = definition_data.WeaponTypeDefinition
         if weapon_type is None:
             return False
         # Check FireType on the default firing mode - EWWFT_Rocket == 2
@@ -227,6 +288,12 @@ def _is_pure_splash(weapon: UObject) -> bool:
         type_name = str(weapon_type.Name) if weapon_type.Name is not None else ""
         if "Launcher" in type_name:
             return True
+        # Torgue barrels on ARs replace bullets with grenades (pure splash)
+        barrel = definition_data.BarrelPartDefinition
+        if barrel is not None:
+            barrel_name = str(barrel.PathName(barrel))
+            if "AR_Barrel_Torgue" in barrel_name:
+                return True
     except Exception:
         pass
     return False
