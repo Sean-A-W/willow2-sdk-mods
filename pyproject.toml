@@ -1,0 +1,33 @@
+[tool.pyright]
+pythonVersion = "3.13"
+pythonPlatform = "Windows"
+typeCheckingMode = "strict"
+extraPaths = [
+    ".willow2-mod-manager/src",
+]
+exclude = [
+    "BL2_Class_Extraction",
+    "BSABT",
+    ".*",
+    "**/__pycache__",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+exclude = [
+    "BL2_Class_Extraction",
+    "BSABT",
+    "scripts",
+    ".*",
+    "**/__pycache__",
+]
+
+[tool.ruff.lint]
+select = [
+    "F",              # pyflakes
+    "E", "W",         # pycodestyle
+    "UP",             # pyupgrade
+    "B",              # bugbear
+    "RUF",            # ruff-specific
+]

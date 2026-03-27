@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.log
+
+# Mod-specific generated files
+BSABT/spawnpoint.json
+
+# Linting/type-checking caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+pyrightconfig.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+.out/
+
+# Release artifacts (built by prepare_releases.py)
+*.sdkmod
+
+
+

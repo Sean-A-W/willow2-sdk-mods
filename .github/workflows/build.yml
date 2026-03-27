@@ -1,0 +1,76 @@
+name: Build & Release
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "*/pyproject.toml"
+      - "**/*.py"
+      - "prepare_releases.py"
+      - ".github/workflows/build.yml"
+      - "!scripts/**"
+      - "!**/docs/**"
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+  build-and-release:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build .sdkmod files
+        run: python prepare_releases.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdkmod-releases
+          path: |
+            .out/*.sdkmod
+            .out/*.zip
+
+      - name: Create latest release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: andelf/nightly-release@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: latest
+          name: "Automated Releases"
+          prerelease: false
+          body: |
+            Automated release of all SDK mods.
+            Built from commit ${{ github.sha }}.
+
+            Mods by other authors are modified versions — see each mod's pyproject.toml for original credits.
+          files: |
+            .out/*.sdkmod
+            .out/*.zip

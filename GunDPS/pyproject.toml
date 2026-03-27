@@ -1,0 +1,11 @@
+[project]
+name = "GunDPS"
+version = "0.1.0"
+authors = [{ name = "sean" }]
+description = "Displays a very rough DPS estimate for weapons using simple math, the formula can be customised if you know how to write python."
+
+[tool.sdkmod]
+name = "Gun DPS"
+version = "0.1.0"
+supported_games = ["BL2", "TPS", "AoDK"]
+coop_support = "ClientSide"
