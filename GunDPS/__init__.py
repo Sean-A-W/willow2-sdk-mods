@@ -16,8 +16,7 @@ assume_vanilla_bpds = BoolOption(
     description=(
         "When enabled, known vanilla weapon behaviours (e.g. Vladof launcher"
         " free shots) are corrected in the DPS calculation and the (!)"
-        " warning is removed. Disable this if you have mods that rework"
-        " weapon archetypes."
+        " warning is removed."
     ),
 )
 
