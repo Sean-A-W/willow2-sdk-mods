@@ -2,13 +2,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from mods_base import build_mod, hook, get_pc, SliderOption
+from mods_base import build_mod, hook, get_pc, BoolOption, SliderOption
 import unrealsdk
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import UObject, WrappedStruct, BoundFunction
 
 
 # --- Options ---
+
+assume_vanilla_bpds = BoolOption(
+    "Assume Vanilla BPDs",
+    False,
+    description=(
+        "When enabled, known vanilla weapon behaviours (e.g. Vladof launcher"
+        " free shots) are corrected in the DPS calculation and the (!)"
+        " warning is removed. Disable this if you have mods that rework"
+        " weapon archetypes."
+    ),
+)
 
 display_duration = SliderOption(
     "Display Duration",
@@ -221,6 +232,45 @@ def _is_pure_splash(weapon: UObject) -> bool:
     return False
 
 
+# Known vanilla manufacturer+type combos and their effective mag size
+# multipliers. Only applied when assume_vanilla_bpds is enabled.
+_VANILLA_MAG_SIZE_OVERRIDES: dict[tuple[str, str], float] = {
+    ("Vladof", "Launcher"): 1.5,  # every 3rd shot is free
+}
+
+
+def _get_manufacturer_name(weapon: UObject) -> str:
+    """Return the manufacturer name (e.g. 'Vladof') or empty string."""
+    try:
+        mfr = weapon.DefinitionData.ManufacturerDefinition
+        if mfr is not None:
+            return str(mfr.Name)
+    except Exception:
+        pass
+    return ""
+
+
+def _get_weapon_type_name(weapon: UObject) -> str:
+    """Return the weapon type name (e.g. 'WT_Vladof_Launcher') or empty string."""
+    try:
+        wtype = weapon.DefinitionData.WeaponTypeDefinition
+        if wtype is not None:
+            return str(wtype.Name)
+    except Exception:
+        pass
+    return ""
+
+
+def _get_vanilla_mag_size_mult(weapon: UObject) -> float | None:
+    """Return the mag size multiplier if this is a known vanilla BPD combo."""
+    manufacturer = _get_manufacturer_name(weapon)
+    type_name = _get_weapon_type_name(weapon)
+    for (mfr_pattern, type_pattern), multiplier in _VANILLA_MAG_SIZE_OVERRIDES.items():
+        if mfr_pattern in manufacturer and type_pattern in type_name:
+            return multiplier
+    return None
+
+
 def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
     """Read all weapon stats into a dict.
 
@@ -278,9 +328,21 @@ def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
         1.0 + crit_pos_scale
     ) / neg_scale_divisor + crit_postadd
 
+    # --- Vanilla BPD corrections ---
+
+    vanilla_mag_mult = None
+    if assume_vanilla_bpds.value:
+        vanilla_mag_mult = _get_vanilla_mag_size_mult(weapon)
+        if vanilla_mag_mult is not None:
+            stats["mag_size"] = float(int(float(stats["mag_size"]) * vanilla_mag_mult))
+
     # --- Flags ---
 
-    stats["has_bpd"] = _has_nonstandard_bpd(weapon)
+    has_bpd = _has_nonstandard_bpd(weapon)
+    # If vanilla corrections are active and matched, treat BPD as accounted for
+    if vanilla_mag_mult is not None:
+        has_bpd = False
+    stats["has_bpd"] = has_bpd
     stats["pure_splash"] = _is_pure_splash(weapon)
 
     return stats
@@ -406,5 +468,5 @@ def _on_set_item_card(
 # --- Build Mod ---
 
 mod = build_mod(
-    options=[display_duration],
+    options=[display_duration, assume_vanilla_bpds],
 )
