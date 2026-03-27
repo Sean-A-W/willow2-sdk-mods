@@ -302,9 +302,7 @@ _VANILLA_MAG_SIZE_OVERRIDES: dict[tuple[str, str], float] = {
 
 # Known vanilla barrel paths that convert bullets to pure splash
 # (grenades). These cannot crit.
-_VANILLA_SPLASH_BARRELS: tuple[str, ...] = (
-    "AR_Barrel_Torgue",
-)
+_VANILLA_SPLASH_BARRELS: tuple[str, ...] = ("AR_Barrel_Torgue",)
 
 
 def _get_manufacturer_name(weapon: UObject) -> str:
