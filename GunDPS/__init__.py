@@ -401,7 +401,7 @@ def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
     if assume_vanilla_bpds.value:
         vanilla_mag_mult = _get_vanilla_mag_size_mult(weapon)
         if vanilla_mag_mult is not None:
-            stats["mag_size"] = float(int(float(stats["mag_size"]) * vanilla_mag_mult))
+            stats["mag_size"] = float(stats["mag_size"]) * vanilla_mag_mult
 
     # --- Flags ---
 
