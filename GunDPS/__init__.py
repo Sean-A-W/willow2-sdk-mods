@@ -287,22 +287,24 @@ def _is_pure_splash(weapon: UObject) -> bool:
         type_name = str(weapon_type.Name) if weapon_type.Name is not None else ""
         if "Launcher" in type_name:
             return True
-        # Torgue barrels on ARs replace bullets with grenades (pure splash)
-        barrel = definition_data.BarrelPartDefinition
-        if barrel is not None:
-            barrel_name = str(barrel.PathName(barrel))
-            if "AR_Barrel_Torgue" in barrel_name:
-                return True
     except Exception:
         pass
     return False
 
 
+# --- Vanilla BPD assumptions (only applied when the option is enabled) ---
+
 # Known vanilla manufacturer+type combos and their effective mag size
-# multipliers. Only applied when assume_vanilla_bpds is enabled.
+# multipliers.
 _VANILLA_MAG_SIZE_OVERRIDES: dict[tuple[str, str], float] = {
     ("Vladof", "Launcher"): 1.5,  # every 3rd shot is free
 }
+
+# Known vanilla barrel paths that convert bullets to pure splash
+# (grenades). These cannot crit.
+_VANILLA_SPLASH_BARRELS: tuple[str, ...] = (
+    "AR_Barrel_Torgue",
+)
 
 
 def _get_manufacturer_name(weapon: UObject) -> str:
@@ -325,6 +327,20 @@ def _get_weapon_type_name(weapon: UObject) -> str:
     except Exception:
         pass
     return ""
+
+
+def _is_vanilla_splash_barrel(weapon: UObject) -> bool:
+    """Return True if the weapon has a barrel known to fire pure splash."""
+    try:
+        barrel = weapon.DefinitionData.BarrelPartDefinition
+        if barrel is not None:
+            barrel_path = str(barrel.PathName(barrel))
+            for pattern in _VANILLA_SPLASH_BARRELS:
+                if pattern in barrel_path:
+                    return True
+    except Exception:
+        pass
+    return False
 
 
 def _get_vanilla_mag_size_mult(weapon: UObject) -> float | None:
@@ -396,20 +412,24 @@ def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
 
     # --- Vanilla BPD corrections ---
 
-    vanilla_mag_mult = None
+    vanilla_corrected = False
     if assume_vanilla_bpds.value:
         vanilla_mag_mult = _get_vanilla_mag_size_mult(weapon)
         if vanilla_mag_mult is not None:
             stats["mag_size"] = float(stats["mag_size"]) * vanilla_mag_mult
+            vanilla_corrected = True
 
     # --- Flags ---
 
     has_bpd = _has_nonstandard_bpd(weapon)
-    # If vanilla corrections are active and matched, treat BPD as accounted for
-    if vanilla_mag_mult is not None:
+    if vanilla_corrected:
         has_bpd = False
     stats["has_bpd"] = has_bpd
-    stats["pure_splash"] = _is_pure_splash(weapon)
+
+    pure_splash = _is_pure_splash(weapon)
+    if assume_vanilla_bpds.value and _is_vanilla_splash_barrel(weapon):
+        pure_splash = True
+    stats["pure_splash"] = pure_splash
 
     return stats
 
