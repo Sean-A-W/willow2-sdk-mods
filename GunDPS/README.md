@@ -110,5 +110,5 @@ To add new attributes, add their `AttributeDefinition` path to the `WEAPON_ATTRI
 
 ## Planned Features
 
-- Otion to switch to a DPS display in the item card stat bars (top stats)
-- Otion to switch to a DPS display in the item card fun stats text area
+- Option to switch to a DPS display in the item card stat bars (top stats)
+- Option to switch to a DPS display in the item card fun stats text area
