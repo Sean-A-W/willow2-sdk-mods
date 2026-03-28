@@ -62,9 +62,7 @@ _attr_cache: dict[str, UObject | None] = {}
 def _find_attr(key: str) -> UObject | None:
     if key not in _attr_cache:
         try:
-            _attr_cache[key] = unrealsdk.find_object(
-                "AttributeDefinition", WEAPON_ATTRIBUTES[key]
-            )
+            _attr_cache[key] = unrealsdk.find_object("AttributeDefinition", WEAPON_ATTRIBUTES[key])
         except Exception:
             _attr_cache[key] = None
     return _attr_cache[key]
@@ -479,16 +477,13 @@ def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
     stats["fire_rate"] = (1.0 / fire_interval) if fire_interval > 0 else 0.0
 
     # crit_neg_scale is already negative, so (1 - negative) == (1 + abs).
-    crit_preadd, crit_pos_scale, crit_neg_scale, crit_postadd = (
-        _get_weapon_crit_parts(weapon)
-    )
+    crit_preadd, crit_pos_scale, crit_neg_scale, crit_postadd = _get_weapon_crit_parts(weapon)
     neg_scale_divisor = 1.0 - crit_neg_scale
     if neg_scale_divisor <= 0:
         neg_scale_divisor = 0.001
-    stats["crit_mult"] = (
-        (2.0 + crit_preadd) * (1.0 + crit_pos_scale) / neg_scale_divisor
-        + crit_postadd
-    )
+    stats["crit_mult"] = (2.0 + crit_preadd) * (
+        1.0 + crit_pos_scale
+    ) / neg_scale_divisor + crit_postadd
 
     stats["splash_scale"] = _get_weapon_splash_scale(weapon)
 
@@ -555,9 +550,7 @@ def calc_dps(stats: dict[str, float | bool]) -> tuple[float, float] | None:
     if time_per_mag_cycle <= 0:
         return None
 
-    impact_dps = (
-        (single_shot_damage * fire_rate * shots_per_mag) / time_per_mag_cycle
-    )
+    impact_dps = (single_shot_damage * fire_rate * shots_per_mag) / time_per_mag_cycle
     splash_dps = impact_dps * splash_scale
 
     return impact_dps, splash_dps
