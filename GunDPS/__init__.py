@@ -15,8 +15,8 @@ assume_vanilla_bpds = BoolOption(
     False,
     description=(
         "When enabled, known vanilla weapon behaviours (e.g. Vladof launcher"
-        " free shots) are corrected in the DPS calculation and the (!)"
-        " warning is removed."
+        " free shots, Torgue AR grenade barrels) are corrected in the DPS"
+        " calculation and the (!) warning is removed."
     ),
 )
 
@@ -29,11 +29,10 @@ display_duration = SliderOption(
 )
 
 
-# --- Weapon Stats ---
+# --- Attribute Reading ---
 
-# Attribute paths for weapon stats. Each maps a friendly name to an
-# AttributeDefinition object path that can be resolved at runtime via
-# unrealsdk.find_object("AttributeDefinition", path).
+# Maps friendly stat names to AttributeDefinition object paths.
+# Resolved at runtime via unrealsdk.find_object("AttributeDefinition", path).
 WEAPON_ATTRIBUTES: dict[str, str] = {
     # Core stats used by the default DPS formula
     "damage": "D_Attributes.Weapon.WeaponDamage",
@@ -63,7 +62,9 @@ _attr_cache: dict[str, UObject | None] = {}
 def _find_attr(key: str) -> UObject | None:
     if key not in _attr_cache:
         try:
-            _attr_cache[key] = unrealsdk.find_object("AttributeDefinition", WEAPON_ATTRIBUTES[key])
+            _attr_cache[key] = unrealsdk.find_object(
+                "AttributeDefinition", WEAPON_ATTRIBUTES[key]
+            )
         except Exception:
             _attr_cache[key] = None
     return _attr_cache[key]
@@ -87,8 +88,11 @@ def read_weapon_stat(weapon: UObject, key: str, default: float = 0.0) -> float:
         return default
 
 
+# --- Crit Calculation ---
+
 _CRIT_ATTR_PATH = "D_Attributes.GameplayAttributes.PlayerCriticalHitBonus"
 
+# All weapon part slot names on DefinitionData.
 _PART_SLOTS = (
     "WeaponTypeDefinition",
     "BalanceDefinition",
@@ -106,13 +110,14 @@ _PART_SLOTS = (
 
 
 def _get_weapon_crit_parts(weapon: UObject) -> tuple[float, float, float, float]:
-    """Collect the weapon's crit modifiers from all parts' ExternalAttributeEffects.
+    """Collect crit modifiers from all weapon parts' ExternalAttributeEffects.
 
-    Uses the attribute formula which separates bonuses by modifier
-    type and by sign for Scale modifiers (taken from bl2.parts):
+    Uses the bl2.parts attribute formula which separates bonuses by modifier
+    type and by sign for Scale modifiers:
         Final = (Base + PreAdd) * (1 + PosScale) / (1 - NegScale) + PostAdd
 
-    Returns (crit_preadd, crit_pos_scale, crit_neg_scale, crit_postadd) sums.
+    Returns (crit_preadd, crit_pos_scale, crit_neg_scale, crit_postadd).
+    crit_neg_scale will be <= 0 (already negative).
     """
     crit_preadd = 0.0
     crit_pos_scale = 0.0
@@ -162,9 +167,15 @@ def _get_weapon_crit_parts(weapon: UObject) -> tuple[float, float, float, float]
     return crit_preadd, crit_pos_scale, crit_neg_scale, crit_postadd
 
 
-# Behavior class names that are known to NOT affect DPS calculations.
-# These are visual, cosmetic, parameter-setting, or projectile detonation
-# behaviors (splash detonation is already handled by _is_pure_splash).
+# --- BPD Scanning ---
+#
+# BehaviorProviderDefinitions (BPDs) contain behavior trees that can change
+# how a weapon fires, consumes ammo, or deals damage. We scan them for two
+# purposes:
+#   1. Detect unknown DPS-affecting behaviors -> show (!) warning
+#   2. Read splash damage scale from Behavior_Explode instances
+
+# Behaviors in this set are cosmetic / visual and don't affect DPS.
 _HARMLESS_BEHAVIORS: set[str] = {
     "Behavior_RunBehaviorCollection",
     "Behavior_CompareFloat",
@@ -173,13 +184,16 @@ _HARMLESS_BEHAVIORS: set[str] = {
     "Behavior_SetObjectParam",
     "Behavior_AddInstanceData",
     "Behavior_ChangeSpin",
-    "Behavior_Explode",
+    "Behavior_Explode",  # splash damage - read separately by _get_bpd_splash_scale
     "ProjectileBehavior_Detonate",
 }
 
 
 def _get_bpd_behavior_names(bpd: UObject) -> list[str]:
-    """Return class names of all behaviors inside a BPD."""
+    """Return class names of all behaviors inside a BPD.
+
+    Used by both the DPS-behavior detector and the splash scale reader.
+    """
     names: list[str] = []
     try:
         sequences = bpd.BehaviorSequences
@@ -204,86 +218,158 @@ def _get_bpd_behavior_names(bpd: UObject) -> list[str]:
     return names
 
 
-def _bpd_has_dps_behaviors(bpd: UObject) -> bool:
-    """Return True if a BPD contains any behaviors not in the harmless set."""
-    for name in _get_bpd_behavior_names(bpd):
-        if name not in _HARMLESS_BEHAVIORS:
-            return True
-    return False
+def _get_bpd_splash_scale(bpd: UObject) -> float:
+    """Read splash damage scale from Behavior_Explode instances in a BPD.
 
+    Each Behavior_Explode has a DamageFormula with BaseValueScaleConstant
+    representing the fraction of card damage dealt as additional splash
+    (e.g. 0.8 = 80%, 1.0 = 100%).
 
-def _has_nonstandard_bpd(weapon: UObject) -> bool:
-    """Return True if the weapon has a BPD with DPS-affecting behaviors.
-
-    Scans all BPDs on the weapon (type, projectile, parts) and checks
-    if any contain behaviors outside the known-harmless set.
+    Returns the highest scale found, or 0.0 if no Behavior_Explode exists.
     """
+    highest_scale = 0.0
+    try:
+        sequences = bpd.BehaviorSequences
+        if sequences is None:
+            return highest_scale
+        for seq in sequences:
+            try:
+                actions = seq.BehaviorData2
+                if actions is None:
+                    continue
+                for action in actions:
+                    try:
+                        behavior = action.Behavior
+                        if behavior is None:
+                            continue
+                        if str(behavior.Class.Name) != "Behavior_Explode":
+                            continue
+                        scale = float(behavior.DamageFormula.BaseValueScaleConstant)
+                        if scale > highest_scale:
+                            highest_scale = scale
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return highest_scale
+
+
+def _collect_all_bpds(weapon: UObject) -> list[UObject]:
+    """Gather every BPD reachable from a weapon (type, projectile, all parts).
+
+    Used by both the splash scanner and the unknown-behavior detector to
+    avoid duplicating the traversal logic.
+    """
+    bpds: list[UObject] = []
     try:
         definition_data = weapon.DefinitionData
     except Exception:
-        return False
+        return bpds
 
-    # Check the weapon type definition
+    # Weapon type and its projectile
     try:
         weapon_type = definition_data.WeaponTypeDefinition
         if weapon_type is not None:
             bpd = weapon_type.BehaviorProviderDefinition
-            if bpd is not None and _bpd_has_dps_behaviors(bpd):
-                return True
-            # Check the projectile definition
+            if bpd is not None:
+                bpds.append(bpd)
             firing_mode = weapon_type.DefaultFiringModeDefinition
             if firing_mode is not None:
-                projectile_def = firing_mode.ProjectileDefinition
-                if projectile_def is not None:
-                    proj_bpd = projectile_def.BehaviorProviderDefinition
-                    if proj_bpd is not None and _bpd_has_dps_behaviors(proj_bpd):
-                        return True
+                proj_def = firing_mode.ProjectileDefinition
+                if proj_def is not None:
+                    proj_bpd = proj_def.BehaviorProviderDefinition
+                    if proj_bpd is not None:
+                        bpds.append(proj_bpd)
     except Exception:
         pass
 
-    # Check all part BPDs and custom firing modes
+    # All parts and their custom firing mode projectiles
     for slot in _PART_SLOTS:
         try:
             part = getattr(definition_data, slot)
             if part is None:
                 continue
             bpd = part.BehaviorProviderDefinition
-            if bpd is not None and _bpd_has_dps_behaviors(bpd):
-                return True
-            # Normal weapons don't have custom firing modes on parts.
-            # If one exists, the weapon likely has special projectile
-            # behaviour (splitting, grenades, etc.) we can't calculate.
+            if bpd is not None:
+                bpds.append(bpd)
             try:
-                if part.CustomFiringModeDefinition is not None:
-                    return True
+                cfm = part.CustomFiringModeDefinition
+                if cfm is not None:
+                    cproj = cfm.ProjectileDefinition
+                    if cproj is not None:
+                        cpbpd = cproj.BehaviorProviderDefinition
+                        if cpbpd is not None:
+                            bpds.append(cpbpd)
             except Exception:
                 pass
         except Exception:
             continue
 
+    return bpds
+
+
+def _get_weapon_splash_scale(weapon: UObject) -> float:
+    """Return the highest splash damage scale found across all weapon BPDs."""
+    highest_scale = 0.0
+    for bpd in _collect_all_bpds(weapon):
+        scale = _get_bpd_splash_scale(bpd)
+        if scale > highest_scale:
+            highest_scale = scale
+    return highest_scale
+
+
+def _has_nonstandard_bpd(weapon: UObject) -> bool:
+    """Return True if any weapon BPD contains unknown DPS-affecting behaviors.
+
+    Also returns True if any part has a CustomFiringModeDefinition, since
+    normal weapons never have one and it indicates special projectile
+    behaviour we can't calculate without building a tool to evaluate
+    without building a proper interpreter for BPDs.
+    """
+    for bpd in _collect_all_bpds(weapon):
+        for name in _get_bpd_behavior_names(bpd):
+            if name not in _HARMLESS_BEHAVIORS:
+                return True
+
+    # Custom firing modes on parts indicate special projectile behaviour
+    try:
+        definition_data = weapon.DefinitionData
+        for slot in _PART_SLOTS:
+            try:
+                part = getattr(definition_data, slot)
+                if part is not None and part.CustomFiringModeDefinition is not None:
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     return False
 
 
-def _is_pure_splash(weapon: UObject) -> bool:
-    """Return True if the weapon delivers all its card damage as splash.
+# --- Pure Splash Detection ---
 
-    Rocket-type weapons deal all damage through HurtRadius (splash) which
-    cannot crit.  Bullet/hitscan weapons deliver card damage as a direct hit
-    (crittable) even if they also have splash on top. This is important
-    information to calculate valid crit damage.
+
+def _is_pure_splash(weapon: UObject) -> bool:
+    """Return True if the weapon delivers ALL its card damage as splash.
+
+    Rocket-type weapons (FireType == EWWFT_Rocket) deal all damage through
+    HurtRadius which cannot crit. Bullet/hitscan weapons deliver card
+    damage as a direct hit (crittable) even if they also have splash on top.
     """
     try:
-        definition_data = weapon.DefinitionData
-        weapon_type = definition_data.WeaponTypeDefinition
+        weapon_type = weapon.DefinitionData.WeaponTypeDefinition
         if weapon_type is None:
             return False
-        # Check FireType on the default firing mode - EWWFT_Rocket == 2
+        # EWWFT_Rocket == 2
         firing_mode = weapon_type.DefaultFiringModeDefinition
         if firing_mode is not None:
             fire_type = str(firing_mode.FireType)
             if "Rocket" in fire_type or fire_type == "2":
                 return True
-        # Fallback: check weapon type name for launcher types
+        # Fallback: weapon type name
         type_name = str(weapon_type.Name) if weapon_type.Name is not None else ""
         if "Launcher" in type_name:
             return True
@@ -292,21 +378,22 @@ def _is_pure_splash(weapon: UObject) -> bool:
     return False
 
 
-# --- Vanilla BPD assumptions (only applied when the option is enabled) ---
+# --- Vanilla BPD Assumptions ---
+#
+# These corrections assume unmodded weapon archetypes. Only applied when
+# the "Assume Vanilla BPDs" option is enabled, since mods may change what
+# these weapons do.
 
-# Known vanilla manufacturer+type combos and their effective mag size
-# multipliers.
 _VANILLA_MAG_SIZE_OVERRIDES: dict[tuple[str, str], float] = {
     ("Vladof", "Launcher"): 1.5,  # every 3rd shot is free
 }
 
-# Known vanilla barrel paths that convert bullets to pure splash
-# (grenades). These cannot crit.
-_VANILLA_SPLASH_BARRELS: tuple[str, ...] = ("AR_Barrel_Torgue",)
+_VANILLA_SPLASH_BARRELS: tuple[str, ...] = (
+    "AR_Barrel_Torgue",  # converts bullets to grenades (pure splash)
+)
 
 
 def _get_manufacturer_name(weapon: UObject) -> str:
-    """Return the manufacturer name (e.g. 'Vladof') or empty string."""
     try:
         mfr = weapon.DefinitionData.ManufacturerDefinition
         if mfr is not None:
@@ -317,7 +404,6 @@ def _get_manufacturer_name(weapon: UObject) -> str:
 
 
 def _get_weapon_type_name(weapon: UObject) -> str:
-    """Return the weapon type name (e.g. 'WT_Vladof_Launcher') or empty string."""
     try:
         wtype = weapon.DefinitionData.WeaponTypeDefinition
         if wtype is not None:
@@ -328,7 +414,7 @@ def _get_weapon_type_name(weapon: UObject) -> str:
 
 
 def _is_vanilla_splash_barrel(weapon: UObject) -> bool:
-    """Return True if the weapon has a barrel known to fire pure splash."""
+    """Return True if the barrel is known to convert bullets to pure splash."""
     try:
         barrel = weapon.DefinitionData.BarrelPartDefinition
         if barrel is not None:
@@ -342,7 +428,7 @@ def _is_vanilla_splash_barrel(weapon: UObject) -> bool:
 
 
 def _get_vanilla_mag_size_mult(weapon: UObject) -> float | None:
-    """Return the mag size multiplier if this is a known vanilla BPD combo."""
+    """Return the mag size multiplier for a known vanilla BPD combo, or None."""
     manufacturer = _get_manufacturer_name(weapon)
     type_name = _get_weapon_type_name(weapon)
     for (mfr_pattern, type_pattern), multiplier in _VANILLA_MAG_SIZE_OVERRIDES.items():
@@ -351,37 +437,30 @@ def _get_vanilla_mag_size_mult(weapon: UObject) -> float | None:
     return None
 
 
+# --- Stat Collection ---
+
+
 def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
     """Read all weapon stats into a dict.
 
     Every key from WEAPON_ATTRIBUTES is included with its resolved float
     value, plus the following derived entries:
 
-    Derived floats (from core attributes):
-        fire_rate     - Shots per second (1 / fire_interval).
-        crit_mult     - Crit multiplier from weapon parts, computed with the
-                        bl2.parts attribute formula (see below).
+    Derived floats:
+        fire_rate      - Shots per second (1 / fire_interval).
+        crit_mult      - Crit multiplier from weapon parts using the
+                         bl2.parts attribute formula.
+        splash_scale   - Fraction of card damage dealt as additional splash
+                         (e.g. 0.8 = 80%).  Read from Behavior_Explode
+                         instances in the weapon's BPDs.  0.0 if none.
 
     Flags (bool):
-        has_bpd       - True when the weapon type has a
-                        BehaviorProviderDefinition.  Weapons with a BPD may
-                        have special firing behaviours (free shots, ammo
-                        return, etc.) that the standard DPS formula cannot
-                        account for.  The default display appends "(!)" to
-                        warn the user.
-        pure_splash   - True when ALL of the weapon's card damage is
-                        delivered as splash (e.g. rocket launchers).  Splash
-                        damage cannot crit, so crit_mult should be ignored
-                        for these weapons.
-
-    Crit formula (credit to Zetters who showed me this:
-    https://bl2.parts/calculations/ (I'm assuming him, Apple and other
-    modders made made the site after reversing the game):
-        crit_mult = (Base + PreAdd) * (1 + PosScale) / (1 - NegScale) + PostAdd
-        where Base = 2.0 (BL2 default crit multiplier).
-        Positive and negative Scale bonuses from weapon parts are bucketed
-        separately: positive values multiply up in the numerator, negative
-        values divide in the denominator.
+        has_bpd        - True if any BPD on the weapon contains behaviors
+                         not in the known-harmless set, or if any part has
+                         a CustomFiringModeDefinition.  The display appends
+                         "(!)" to warn the user.
+        pure_splash    - True if ALL card damage is delivered as splash
+                         (e.g. rocket launchers).  Splash cannot crit.
     """
     stats: dict[str, float | bool] = {
         key: read_weapon_stat(weapon, key) for key in WEAPON_ATTRIBUTES
@@ -400,13 +479,18 @@ def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
     stats["fire_rate"] = (1.0 / fire_interval) if fire_interval > 0 else 0.0
 
     # crit_neg_scale is already negative, so (1 - negative) == (1 + abs).
-    crit_preadd, crit_pos_scale, crit_neg_scale, crit_postadd = _get_weapon_crit_parts(weapon)
+    crit_preadd, crit_pos_scale, crit_neg_scale, crit_postadd = (
+        _get_weapon_crit_parts(weapon)
+    )
     neg_scale_divisor = 1.0 - crit_neg_scale
     if neg_scale_divisor <= 0:
         neg_scale_divisor = 0.001
-    stats["crit_mult"] = (2.0 + crit_preadd) * (
-        1.0 + crit_pos_scale
-    ) / neg_scale_divisor + crit_postadd
+    stats["crit_mult"] = (
+        (2.0 + crit_preadd) * (1.0 + crit_pos_scale) / neg_scale_divisor
+        + crit_postadd
+    )
+
+    stats["splash_scale"] = _get_weapon_splash_scale(weapon)
 
     # --- Vanilla BPD corrections ---
 
@@ -435,23 +519,23 @@ def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
 # --- DPS Calculation ---
 #
 # To use a custom formula, replace calc_dps() with your own function that
-# takes a stats dict (from get_weapon_stats) and returns a float or None.
+# takes a stats dict (from get_weapon_stats) and returns a tuple or None.
 
 
-def calc_dps(stats: dict[str, float | bool]) -> float | None:
-    """Calculate weapon DPS using the lootlemon formula.
+def calc_dps(stats: dict[str, float | bool]) -> tuple[float, float] | None:
+    """Calculate weapon DPS, split into impact and splash components.
+
+    Impact DPS is crittable. Splash DPS is not.
 
     Formula:
         single_shot_damage = damage * projectiles
         shots_per_mag      = mag_size / shot_cost
-        dps = (single_shot_damage * fire_rate * shots_per_mag)
-            / (fire_rate * reload_time + shots_per_mag)
-
-    Args:
-        stats: Weapon stats dict from get_weapon_stats().
+        impact_dps = (single_shot_damage * fire_rate * shots_per_mag)
+                   / (fire_rate * reload_time + shots_per_mag)
+        splash_dps = impact_dps * splash_scale
 
     Returns:
-        DPS value, or None if the weapon stats are invalid.
+        (impact_dps, splash_dps) tuple, or None if stats are invalid.
     """
     fire_rate = stats["fire_rate"]
     mag_size = stats["mag_size"]
@@ -459,6 +543,7 @@ def calc_dps(stats: dict[str, float | bool]) -> float | None:
     reload_time = stats["reload_time"]
     damage = stats["damage"]
     projectile_count = stats["projectiles"]
+    splash_scale = float(stats.get("splash_scale", 0.0))
 
     if fire_rate <= 0 or mag_size <= 0:
         return None
@@ -470,7 +555,12 @@ def calc_dps(stats: dict[str, float | bool]) -> float | None:
     if time_per_mag_cycle <= 0:
         return None
 
-    return (single_shot_damage * fire_rate * shots_per_mag) / time_per_mag_cycle
+    impact_dps = (
+        (single_shot_damage * fire_rate * shots_per_mag) / time_per_mag_cycle
+    )
+    splash_dps = impact_dps * splash_scale
+
+    return impact_dps, splash_dps
 
 
 # --- Display ---
@@ -533,20 +623,23 @@ def _on_set_item_card(
         return
 
     stats = get_weapon_stats(item)
-    dps = calc_dps(stats)
-    if dps is not None:
+    result = calc_dps(stats)
+    if result is not None:
+        impact_dps, splash_dps = result
+        total_dps = impact_dps + splash_dps
         crit_mult = stats["crit_mult"]
-        is_splash = bool(stats["pure_splash"])
+        is_pure_splash = bool(stats["pure_splash"])
         has_bpd = bool(stats["has_bpd"])
 
-        if is_splash:
-            crit_dps = None  # splash damage cannot crit
+        if is_pure_splash:
+            crit_dps = None
         elif crit_mult != 1.0:
-            crit_dps = dps * crit_mult
+            # Only impact damage can crit, splash cannot
+            crit_dps = impact_dps * crit_mult + splash_dps
         else:
             crit_dps = None
 
-        _show_dps(dps, crit_dps, has_nonstandard_bpd=has_bpd)
+        _show_dps(total_dps, crit_dps, has_nonstandard_bpd=has_bpd)
 
 
 # --- Build Mod ---
