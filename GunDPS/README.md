@@ -1,10 +1,10 @@
 # Gun DPS
 
-Displays a DPS estimate for weapons, shown as a HUD notification whenever you view a weapon's item card. The formula can be customised if you know how to write Python.
+Displays a DPS estimate for weapons, shown on the weapon's item card and as a HUD notification whenever you view it. When two weapons are compared, the card also shows the DPS difference in green (+) or red (-). The formula can be customised if you know how to write Python.
 
 ## How It Works
 
-**DPS** is calculated from card damage, fire rate, mag size, shot cost, and reload time. Splash damage is detected from `Behavior_Explode` instances in the weapon's BPDs and added on top of impact damage.
+**DPS** is calculated from card damage, fire rate, mag size, shot cost, and reload time. Splash damage is detected from `Behavior_Explode` instances in the weapon's BPDs and firing mode and added on top of impact damage.
 
 **Crit DPS** is shown when the weapon's parts give it a crit bonus. Only the impact portion of damage can crit - splash damage cannot. Weapons that deal pure splash (e.g. rocket launchers) hide the crit line entirely.
 
@@ -24,7 +24,7 @@ Positive and negative Scale bonuses from weapon parts are bucketed separately: p
 
 ## Splash Damage
 
-Splash scale is read at runtime from `Behavior_Explode.DamageFormula.BaseValueScaleConstant` in the weapon's BPDs. For example, a Maliwan pistol has a scale of 0.8 (80% of card damage as additional splash), while a Torgue pistol has 1.0 (100%).
+Splash scale is read at runtime from `Behavior_Explode.DamageFormula.BaseValueScaleConstant` in the weapon's BPDs, and from the `OnAnyImpact` behaviors of its firing mode (where bullet weapons such as Torgue assault rifles keep their explosion). Firing mode explosions only count when their damage formula is based on the weapon's own damage. The highest scale found is used. For example, a Maliwan pistol has a scale of 0.8 (80% of card damage as additional splash), while a Torgue pistol has 1.0 (100%).
 
 Total DPS and Crit DPS account for this:
 
@@ -36,6 +36,11 @@ crit_dps  = impact_dps * crit_mult + splash_dps
 ## Options
 
 - **Display Duration** - How long the notification stays on screen (1-10 seconds).
+- **Show DPS Popup** (on by default) - Show the DPS as a HUD notification.
+- **Show DPS On Item Card** (on by default) - Add the DPS lines to the top of the item card's bonus text.
+- **Show DPS Comparison** (on by default) - When comparing two weapons, show the DPS difference on the item card.
+- **Assume Optimal Element Target** (off by default) - Multiplies the DPS of incendiary and corrosive weapons by 1.5x or 1.75x, as if hitting flesh or armor respectively. The DPS line is marked with e.g. `(x1.5 element)`.
+- **Limit Jakobs Fire Rate** (off by default) - Jakobs pistols, assault rifles and shotguns fire once per trigger pull, so their listed fire rate is rarely achievable. Only weapons that really are single shot are affected (an automatic Jakobs weapon keeps its listed fire rate). Uses **Jakobs Clicks Per Second** (1-15, default 7) as the fire rate instead when it is lower. The DPS line is marked with e.g. `(7 clicks/s)`.
 - **Assume Vanilla BPDs** (off by default) - Applies known corrections for unmodded weapon archetypes. Currently handles:
   - Vladof launchers: effective mag size x1.5 (every 3rd shot is free)
   - Torgue AR barrels: treated as pure splash (grenades, cannot crit)
@@ -69,6 +74,8 @@ The stats dict contains resolved attribute values for the weapon being viewed:
 | `shot_cost` | float | Ammo consumed per shot (0 means infinite mag) |
 | `crit_mult` | float | Crit multiplier from the bl2.parts formula |
 | `splash_scale` | float | Fraction of card damage as additional splash (0.0 = none) |
+| `fire_rate_cap` | float | Clicks per second `fire_rate` was limited to by the Jakobs option (0.0 = not limited) |
+| `element_mult` | float | Optimal element target multiplier, applied to the result of `calc_dps()` (1.0 = none) |
 | `has_bpd` | bool | True if unknown DPS-affecting behaviors were found |
 | `pure_splash` | bool | True if ALL card damage is splash (e.g. rockets) |
 | `spread` | float | Weapon spread (accuracy cone in degrees) |
@@ -134,9 +141,9 @@ Run `scripts/dps_debug_weapon.py` with `pyexec` to hook into weapon card views a
 
 - **Lootlemon** (https://www.lootlemon.com/tools/dps-calculator) - DPS formula used as the basis for calculation.
 - **bl2.parts** (https://bl2.parts/calculations/) - Attribute resolution formula showing how positive and negative Scale bonuses are applied differently. Credit to the many modders who reversed the game to document these equations.
+- **PirateMacDougall** (https://github.com/PirateMacDougall) - Firing mode splash detection, item card display and comparison, optimal element target and Jakobs fire rate options.
 - **Vault Hunter Hub** (https://vaulthunter.info/borderlands-tps/guides/damage-formula) - Damage and crit formula breakdowns, confirming how splash damage and crit interact.
 
 ## Planned Features
 
 - Option to switch to a DPS display in the item card stat bars (top stats)
-- Option to switch to a DPS display in the item card fun stats text area

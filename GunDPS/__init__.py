@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+import time
+from typing import Any, NamedTuple
 
-from mods_base import build_mod, hook, get_pc, BoolOption, SliderOption
+from mods_base import build_mod, hook, get_pc, BoolOption, SliderOption, SpinnerOption
 import unrealsdk
-from unrealsdk.hooks import Type
+from unrealsdk.hooks import Block, Type
 from unrealsdk.unreal import UObject, WrappedStruct, BoundFunction
 
 
@@ -26,6 +27,65 @@ display_duration = SliderOption(
     min_value=1,
     max_value=10,
     description="How long the DPS notification stays on screen (seconds).",
+)
+
+show_dps_popup = BoolOption(
+    "Show DPS Popup",
+    True,
+    description="Show the DPS as a temporary HUD notification when viewing a weapon.",
+)
+
+show_dps_on_card = BoolOption(
+    "Show DPS On Item Card",
+    True,
+    description="Add the DPS lines to the top of the bonus text on weapon item cards.",
+)
+
+show_dps_comparison = BoolOption(
+    "Show DPS Comparison",
+    True,
+    description=(
+        "When a weapon is compared against another one, show the DPS"
+        " difference on the item card: green (+) if higher, red (-) if lower."
+    ),
+)
+
+_ELEMENT_BONUS_OFF = "Off"
+_ELEMENT_BONUS_CHOICES: dict[str, float] = {
+    _ELEMENT_BONUS_OFF: 1.0,
+    "1.5x": 1.5,
+    "1.75x": 1.75,
+}
+
+optimal_element_bonus = SpinnerOption(
+    "Assume Optimal Element Target",
+    _ELEMENT_BONUS_OFF,
+    choices=list(_ELEMENT_BONUS_CHOICES),
+    wrap_enabled=True,
+    description=(
+        "Show incendiary weapons as if hitting flesh and corrosive weapons as"
+        " if hitting armor, by applying the chosen elemental damage bonus."
+        " Other weapons are unaffected."
+    ),
+)
+
+limit_jakobs_fire_rate = BoolOption(
+    "Limit Jakobs Fire Rate",
+    False,
+    description=(
+        "Jakobs pistols, assault rifles and shotguns fire once per trigger"
+        " pull, so their listed fire rate is rarely achievable. When enabled,"
+        " their DPS uses your own clicks per second (below) instead, if that"
+        " is lower than the listed fire rate."
+    ),
+)
+
+jakobs_clicks_per_second = SliderOption(
+    "Jakobs Clicks Per Second",
+    7,
+    min_value=1,
+    max_value=15,
+    description="Estimated trigger pulls per second for Jakobs semi-automatic weapons.",
 )
 
 
@@ -308,9 +368,89 @@ def _collect_all_bpds(weapon: UObject) -> list[UObject]:
     return bpds
 
 
-def _get_weapon_splash_scale(weapon: UObject) -> float:
-    """Return the highest splash damage scale found across all weapon BPDs."""
+_WEAPON_DAMAGE_ATTR_SUFFIX = "Weapon.WeaponDamage"
+
+
+def _get_behaviors_splash_scale(behaviors: Any) -> float:
+    """Return the highest splash scale of the Behavior_Explodes in a behavior list.
+
+    Only formulas based on the weapon's own damage attribute count, since
+    their BaseValueScaleConstant is then a fraction of card damage
+    (e.g. 0.9 = 90%). Anything else is not a card-relative value.
+    """
     highest_scale = 0.0
+    if behaviors is None:
+        return highest_scale
+    for behavior in behaviors:
+        try:
+            if behavior is None or str(behavior.Class.Name) != "Behavior_Explode":
+                continue
+            formula = behavior.DamageFormula
+            attr = formula.BaseValueAttribute
+            if attr is None:
+                continue
+            if not str(attr.PathName(attr)).endswith(_WEAPON_DAMAGE_ATTR_SUFFIX):
+                continue
+            scale = float(formula.BaseValueScaleConstant)
+            if scale > highest_scale:
+                highest_scale = scale
+        except Exception:
+            continue
+    return highest_scale
+
+
+def _get_firing_mode_splash_scale(weapon: UObject) -> float:
+    """Read splash from the weapon's active firing mode (OnAnyImpact).
+
+    Bullet-type weapons with splash (e.g. Torgue assault rifles) keep their
+    Behavior_Explode in FiringModeDefinition.OnAnyImpact rather than in a
+    BPD. A part's CustomFiringModeDefinition replaces the weapon type's
+    default firing mode when present.
+    """
+    try:
+        definition_data = weapon.DefinitionData
+    except Exception:
+        return 0.0
+
+    modes: list[UObject] = []
+    for slot in _PART_SLOTS:
+        try:
+            part = getattr(definition_data, slot)
+            if part is None:
+                continue
+            custom_mode = part.CustomFiringModeDefinition
+            if custom_mode is not None:
+                modes.append(custom_mode)
+        except Exception:
+            continue
+    if not modes:
+        try:
+            default_mode = definition_data.WeaponTypeDefinition.DefaultFiringModeDefinition
+            if default_mode is not None:
+                modes.append(default_mode)
+        except Exception:
+            pass
+
+    highest_scale = 0.0
+    for mode in modes:
+        try:
+            scale = _get_behaviors_splash_scale(mode.OnAnyImpact)
+        except Exception:
+            continue
+        if scale > highest_scale:
+            highest_scale = scale
+    return highest_scale
+
+
+def _get_weapon_splash_scale(weapon: UObject) -> float:
+    """Return the highest splash damage scale found for a weapon.
+
+    Considers both the BPD-based scale (projectile explosions, e.g.
+    launchers) and the firing-mode scale (bullet splash, e.g. Torgue ARs).
+    The highest is used rather than the sum so a single explosion that is
+    visible through both routes is not counted twice.
+    """
+    highest_scale = _get_firing_mode_splash_scale(weapon)
     for bpd in _collect_all_bpds(weapon):
         scale = _get_bpd_splash_scale(bpd)
         if scale > highest_scale:
@@ -435,6 +575,58 @@ def _get_vanilla_mag_size_mult(weapon: UObject) -> float | None:
     return None
 
 
+# --- Jakobs Semi-Automatic Detection ---
+
+# Jakobs pistols, assault rifles and shotguns fire once per trigger pull.
+# Matched against the weapon type's path (e.g. GD_Weap_AssaultRifle.A_Weapons...).
+_JAKOBS_SEMI_AUTO_TYPES: tuple[str, ...] = ("Pistol", "AssaultRifle", "Shotgun")
+
+
+def _is_jakobs_semi_auto(weapon: UObject) -> bool:
+    """Return True for Jakobs weapons that fire once per trigger pull.
+
+    AutomaticBurstCount is the number of shots fired per trigger pull, with 0
+    meaning fully automatic. Jakobs weapons that are not single shot (e.g.
+    with a minigun barrel) are left alone.
+    """
+    if "Jakobs" not in _get_manufacturer_name(weapon):
+        return False
+    try:
+        if int(weapon.AutomaticBurstCount) != 1:
+            return False
+    except Exception:
+        pass
+    try:
+        weapon_type = weapon.DefinitionData.WeaponTypeDefinition
+        path = str(weapon_type.PathName(weapon_type))
+    except Exception:
+        return False
+    return any(kind in path for kind in _JAKOBS_SEMI_AUTO_TYPES)
+
+
+# --- Element Detection ---
+
+# WillowDamageTypeDefinition.EDamageType values with an optimal target bonus.
+# Incendiary is strong against flesh and corrosive against armor.
+_DAMAGE_TYPE_INCENDIARY = 1
+_DAMAGE_TYPE_CORROSIVE = 4
+_OPTIMAL_TARGET_DAMAGE_TYPES: tuple[int, ...] = (_DAMAGE_TYPE_INCENDIARY, _DAMAGE_TYPE_CORROSIVE)
+
+
+def _has_optimal_target_element(weapon: UObject) -> bool:
+    """Return True if the weapon is incendiary or corrosive.
+
+    Asks the game itself, which resolves the damage type from the weapon's
+    parts the same way it does for the elemental icon on the item card.
+    """
+    try:
+        return any(
+            bool(weapon.DoesDamageType(damage_type)) for damage_type in _OPTIMAL_TARGET_DAMAGE_TYPES
+        )
+    except Exception:
+        return False
+
+
 # --- Stat Collection ---
 
 
@@ -450,7 +642,13 @@ def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
                          bl2.parts attribute formula.
         splash_scale   - Fraction of card damage dealt as additional splash
                          (e.g. 0.8 = 80%).  Read from Behavior_Explode
-                         instances in the weapon's BPDs.  0.0 if none.
+                         instances in the weapon's BPDs and firing mode.
+                         0.0 if none.
+        fire_rate_cap  - The clicks per second fire_rate was limited to
+                         (Jakobs semi-auto option), or 0.0 if not limited.
+        element_mult   - Optimal-target elemental multiplier applied to the
+                         displayed DPS (1.0 = none).  Not applied by
+                         calc_dps itself.
 
     Flags (bool):
         has_bpd        - True if any BPD on the weapon contains behaviors
@@ -476,6 +674,15 @@ def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
     fire_interval = stats["fire_interval"]
     stats["fire_rate"] = (1.0 / fire_interval) if fire_interval > 0 else 0.0
 
+    # Jakobs semi-auto weapons: the listed fire rate is a ceiling, but the
+    # player's trigger finger is usually the limit.
+    stats["fire_rate_cap"] = 0.0
+    if limit_jakobs_fire_rate.value and _is_jakobs_semi_auto(weapon):
+        click_rate = float(jakobs_clicks_per_second.value)
+        if 0 < click_rate < stats["fire_rate"]:
+            stats["fire_rate"] = click_rate
+            stats["fire_rate_cap"] = click_rate
+
     # crit_neg_scale is already negative, so (1 - negative) == (1 + abs).
     crit_preadd, crit_pos_scale, crit_neg_scale, crit_postadd = _get_weapon_crit_parts(weapon)
     neg_scale_divisor = 1.0 - crit_neg_scale
@@ -486,6 +693,12 @@ def get_weapon_stats(weapon: UObject) -> dict[str, float | bool]:
     ) / neg_scale_divisor + crit_postadd
 
     stats["splash_scale"] = _get_weapon_splash_scale(weapon)
+
+    # Optimal-target elemental bonus (incendiary vs flesh, corrosive vs armor).
+    element_mult = _ELEMENT_BONUS_CHOICES.get(optimal_element_bonus.value, 1.0)
+    if element_mult != 1.0 and not _has_optimal_target_element(weapon):
+        element_mult = 1.0
+    stats["element_mult"] = element_mult
 
     # --- Vanilla BPD corrections ---
 
@@ -559,18 +772,121 @@ def calc_dps(stats: dict[str, float | bool]) -> tuple[float, float] | None:
 # --- Display ---
 
 
-def _show_dps(
-    dps: float,
-    crit_dps: float | None,
-    has_nonstandard_bpd: bool = False,
-) -> None:
+class DpsReadout(NamedTuple):
+    """Everything needed to display a weapon's DPS."""
+
+    dps: float
+    crit_dps: float | None
+    has_nonstandard_bpd: bool = False
+    element_mult: float = 1.0
+    fire_rate_cap: float = 0.0
+
+
+def compute_readout(weapon: UObject) -> DpsReadout | None:
+    """Work out the DPS readout for a weapon, or None if it can't be done."""
+    stats = get_weapon_stats(weapon)
+    result = calc_dps(stats)
+    if result is None:
+        return None
+
+    impact_dps, splash_dps = result
+    element_mult = float(stats.get("element_mult", 1.0))
+    impact_dps *= element_mult
+    splash_dps *= element_mult
+    total_dps = impact_dps + splash_dps
+    crit_mult = float(stats["crit_mult"])
+
+    if bool(stats["pure_splash"]):
+        crit_dps = None
+    elif crit_mult != 1.0:
+        # Only impact damage can crit, splash cannot
+        crit_dps = impact_dps * crit_mult + splash_dps
+    else:
+        crit_dps = None
+
+    return DpsReadout(
+        dps=total_dps,
+        crit_dps=crit_dps,
+        has_nonstandard_bpd=bool(stats["has_bpd"]),
+        element_mult=element_mult,
+        fire_rate_cap=float(stats.get("fire_rate_cap", 0.0)),
+    )
+
+
+# Comparing two weapons builds a card for each, and each card needs the
+# readout of both. Remembering readouts for a moment avoids recalculating the
+# same weapon several times in a row, while staying short enough that skill,
+# gear and option changes show up right away.
+_READOUT_CACHE_SECONDS = 0.5
+_READOUT_CACHE_MAX_ENTRIES = 16
+_readout_cache: dict[str, tuple[float, DpsReadout | None]] = {}
+
+
+def _get_readout(weapon: UObject) -> DpsReadout | None:
+    """Return the weapon's readout, reusing a very recent one if available."""
+    try:
+        key = str(weapon.PathName(weapon))
+    except Exception:
+        return compute_readout(weapon)
+
+    now = time.monotonic()
+    cached = _readout_cache.get(key)
+    if cached is not None and now - cached[0] < _READOUT_CACHE_SECONDS:
+        return cached[1]
+
+    readout = compute_readout(weapon)
+    if len(_readout_cache) >= _READOUT_CACHE_MAX_ENTRIES:
+        _readout_cache.clear()
+    _readout_cache[key] = (now, readout)
+    return readout
+
+
+_DIFF_COLOR_HIGHER = "#33ff33"
+_DIFF_COLOR_LOWER = "#ff3333"
+_CARD_TEXT_COLOR = "#ffffff"
+
+
+def _diff_text(diff: float) -> str:
+    """Coloured +/- difference for the item card, or nothing if negligible."""
+    if abs(diff) < 0.5:
+        return ""
+    color = _DIFF_COLOR_HIGHER if diff > 0 else _DIFF_COLOR_LOWER
+    sign = "+" if diff > 0 else "-"
+    return f" <font color='{color}'>({sign}{abs(diff):,.0f})</font>"
+
+
+def _dps_lines(readout: DpsReadout, compare: DpsReadout | None = None) -> list[str]:
+    """The DPS lines shared by the popup and the item card.
+
+    Pass `compare` (card only) to append the colour-coded difference against
+    another weapon's readout.
+    """
+    warning = " (!)" if readout.has_nonstandard_bpd else ""
+    element_note = f" (x{readout.element_mult:g} element)" if readout.element_mult != 1.0 else ""
+    cap_note = f" ({readout.fire_rate_cap:g} clicks/s)" if readout.fire_rate_cap > 0 else ""
+    dps_diff = _diff_text(readout.dps - compare.dps) if compare is not None else ""
+    lines = [f"DPS: {readout.dps:,.0f}{dps_diff}{element_note}{cap_note}{warning}"]
+    if readout.crit_dps is not None:
+        crit_diff = ""
+        if compare is not None and compare.crit_dps is not None:
+            crit_diff = _diff_text(readout.crit_dps - compare.crit_dps)
+        lines.append(f"Crit DPS: {readout.crit_dps:,.0f}{crit_diff}{warning}")
+    return lines
+
+
+def _format_card_text(readout: DpsReadout, compare: DpsReadout | None = None) -> str:
+    """DPS as bullet lines in the same style as the card's own bonus text."""
+    return "".join(
+        f"• <font color='{_CARD_TEXT_COLOR}'>{line}</font>\n"
+        for line in _dps_lines(readout, compare)
+    )
+
+
+def _show_popup(readout: DpsReadout) -> None:
     pc = get_pc()
     if pc is None:
         return
-    bpd_warning = " (!)" if has_nonstandard_bpd else ""
-    text = f"DPS: {dps:,.0f}{bpd_warning}"
-    if crit_dps is not None:
-        text += f"\nCrit DPS: {crit_dps:,.0f}{bpd_warning}"
+    text = "\n".join(_dps_lines(readout))
     try:
         movie = pc.myHUD.HUDMovie
         if movie is not None:
@@ -591,52 +907,120 @@ def _show_dps(
         pass
 
 
-# --- Hook ---
+# --- Hooks ---
+#
+# The item card builds itself inside SetItemCardEx, which calls SetFunStats
+# with the bullet text shown under the stat rows, and later SetHeight. So:
+#   1. PRE SetItemCardEx:  work out the DPS for the weapon being shown.
+#   2. PRE SetFunStats:    put the DPS lines at the top of the bullet text.
+#   3. POST SetItemCardEx: show the popup.
+#
+# Hooks only receive a copy of the arguments, so changing them does not
+# change what the game function sees. To change the bullet text, the
+# SetFunStats hook blocks the game's own call and makes the call again
+# itself with the new text.
+
+_current_readout: DpsReadout | None = None
+_pending_card_text: str | None = None
+_in_fun_stats_call = False
 
 
-@hook("WillowGame.ItemCardGFxObject:SetItemCardEx", Type.POST)
-def _on_set_item_card(
+def _as_weapon(item: UObject | None) -> UObject | None:
+    """Return the item if it is a weapon, otherwise None."""
+    if item is None or item.Class.Name != "WillowWeapon":
+        return None
+    return item
+
+
+@hook("WillowGame.ItemCardGFxObject:SetItemCardEx", Type.PRE)
+def _on_set_item_card_pre(
     _obj: UObject,
     args: WrappedStruct,
     _ret: Any,
     _func: BoundFunction,
 ) -> None:
-    try:
-        item = args.InventoryItem
-    except Exception:
-        return
-
-    if item is None:
-        return
+    global _current_readout, _pending_card_text
+    _current_readout = None
+    _pending_card_text = None
 
     try:
-        if item.Class.Name != "WillowWeapon":
+        weapon = _as_weapon(args.InventoryItem)
+        if weapon is None:
             return
+        readout = _get_readout(weapon)
     except Exception:
         return
+    if readout is None:
+        return
+    _current_readout = readout
 
-    stats = get_weapon_stats(item)
-    result = calc_dps(stats)
-    if result is not None:
-        impact_dps, splash_dps = result
-        total_dps = impact_dps + splash_dps
-        crit_mult = stats["crit_mult"]
-        is_pure_splash = bool(stats["pure_splash"])
-        has_bpd = bool(stats["has_bpd"])
+    if not show_dps_on_card.value:
+        return
 
-        if is_pure_splash:
-            crit_dps = None
-        elif crit_mult != 1.0:
-            # Only impact damage can crit, splash cannot
-            crit_dps = impact_dps * crit_mult + splash_dps
-        else:
-            crit_dps = None
+    compare_readout: DpsReadout | None = None
+    if show_dps_comparison.value:
+        try:
+            compare_weapon = _as_weapon(args.CompareAgainstInventoryItem)
+            if compare_weapon is not None:
+                compare_readout = _get_readout(compare_weapon)
+        except Exception:
+            compare_readout = None
 
-        _show_dps(total_dps, crit_dps, has_nonstandard_bpd=has_bpd)
+    _pending_card_text = _format_card_text(readout, compare_readout)
+
+
+@hook("WillowGame.ItemCardGFxObject:SetFunStats", Type.PRE)
+def _on_set_fun_stats(
+    _obj: UObject,
+    args: WrappedStruct,
+    _ret: Any,
+    func: BoundFunction,
+) -> type[Block] | None:
+    global _pending_card_text, _in_fun_stats_call
+    card_text = _pending_card_text
+    if _in_fun_stats_call or not card_text:
+        return None
+    _pending_card_text = None
+
+    _in_fun_stats_call = True
+    try:
+        args.FunStatsText = card_text + str(args.FunStatsText)
+        func(args)
+    except Exception:
+        # Let the game's own call go ahead with the original text.
+        return None
+    finally:
+        _in_fun_stats_call = False
+    return Block
+
+
+@hook("WillowGame.ItemCardGFxObject:SetItemCardEx", Type.POST)
+def _on_set_item_card(
+    _obj: UObject,
+    _args: WrappedStruct,
+    _ret: Any,
+    _func: BoundFunction,
+) -> None:
+    global _current_readout, _pending_card_text
+    readout = _current_readout
+    _current_readout = None
+    _pending_card_text = None
+
+    if readout is not None and show_dps_popup.value:
+        _show_popup(readout)
 
 
 # --- Build Mod ---
 
 mod = build_mod(
-    options=[display_duration, assume_vanilla_bpds],
+    options=[
+        display_duration,
+        assume_vanilla_bpds,
+        show_dps_popup,
+        show_dps_on_card,
+        show_dps_comparison,
+        optimal_element_bonus,
+        limit_jakobs_fire_rate,
+        jakobs_clicks_per_second,
+    ],
 )
