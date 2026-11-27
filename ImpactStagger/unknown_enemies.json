@@ -1,0 +1,240 @@
+[
+  {
+    "ai_name": "CharClass_SuicideMidget",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Maurauder",
+    "true_physics_mass": 52.53044676780701
+  },
+  {
+    "ai_name": "CharClass_PapaBandit",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Nomad",
+    "true_physics_mass": 306.318603515625
+  },
+  {
+    "ai_name": "CharClass_RatMidget",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_TunnelRat",
+    "true_physics_mass": 27.30800475180149
+  },
+  {
+    "ai_name": "CharClass_PsychoBurning",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Maurauder",
+    "true_physics_mass": 78.1853139102459
+  },
+  {
+    "ai_name": "CharClass_Bruiser",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Nomad",
+    "true_physics_mass": 238.06267297267914
+  },
+  {
+    "ai_name": "CharClass_SpiderantWarrior",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_SpiderAnt",
+    "true_physics_mass": 61.04351696372032
+  },
+  {
+    "ai_name": "CharClass_SpiderantSlagged",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_SpiderAnt",
+    "true_physics_mass": 79.90837526321411
+  },
+  {
+    "ai_name": "CharClass_SpiderantSoldier",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_SpiderAnt",
+    "true_physics_mass": 79.90837526321411
+  },
+  {
+    "ai_name": "CharClass_SpiderantQueen",
+    "body_mass": 120.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_SpiderAnt",
+    "true_physics_mass": 61.14864605665207
+  },
+  {
+    "ai_name": "CharClass_SpiderantSpiderling",
+    "body_mass": 80.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_SpiderAnt",
+    "true_physics_mass": 61.14864605665207
+  },
+  {
+    "ai_name": "CharClass_GoliathMidget",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Goliath",
+    "true_physics_mass": 310.10886377096176
+  },
+  {
+    "ai_name": "CharClass_SpiderantRoyalGuard",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_SpiderAnt",
+    "true_physics_mass": 61.14864605665207
+  },
+  {
+    "ai_name": "CharClass_SpiderantChubby",
+    "body_mass": 100.0,
+    "draw_scale": 2.0,
+    "phys_asset": "Phat_SpiderAnt",
+    "true_physics_mass": 297.5275595188141
+  },
+  {
+    "ai_name": "CharClass_SpiderantWorker",
+    "body_mass": 90.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_SpiderAnt",
+    "true_physics_mass": 61.14864605665207
+  },
+  {
+    "ai_name": "CharClass_SpiderantKnight",
+    "body_mass": 150.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_SpiderAnt",
+    "true_physics_mass": 61.14864605665207
+  },
+  {
+    "ai_name": "CharClass_PrimalBeastBaby",
+    "body_mass": 150.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_PrimalBeast",
+    "true_physics_mass": 5.7073979042470455
+  },
+  {
+    "ai_name": "CharClass_Orchid_Pirate_NoBeard",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Orchid_Nomad",
+    "true_physics_mass": 317.5174924135208
+  },
+  {
+    "ai_name": "CharClass_Orchid_LoaderJunk",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_BattleDroid",
+    "true_physics_mass": 35.15025720000267
+  },
+  {
+    "ai_name": "CharClass_Orchid_LoaderPWR",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_BattleDroid",
+    "true_physics_mass": 35.15025720000267
+  },
+  {
+    "ai_name": "CharClass_Orchid_LoaderBUL",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_BattleDroid",
+    "true_physics_mass": 35.15025720000267
+  },
+  {
+    "ai_name": "CharClass_Orchid_LoaderBoss",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_LoaderBoss",
+    "true_physics_mass": 260.06744863826316
+  },
+  {
+    "ai_name": "CharClass_Orchid_LoaderGUN",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_BattleDroid",
+    "true_physics_mass": 35.15025720000267
+  },
+  {
+    "ai_name": "CharClass_Native_Warrior",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Maurauder",
+    "true_physics_mass": 52.53046935796738
+  },
+  {
+    "ai_name": "CharClass_WitchDoctorSlag",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Maurauder",
+    "true_physics_mass": 52.53046935796738
+  },
+  {
+    "ai_name": "CharClass_WitchDoctorShock",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Maurauder",
+    "true_physics_mass": 52.53046935796738
+  },
+  {
+    "ai_name": "CharClass_Native_Elite",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Maurauder",
+    "true_physics_mass": 52.53046935796738
+  },
+  {
+    "ai_name": "CharClass_Sage_ScaylionWarrior",
+    "body_mass": 90.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Char_Skaylion_Physics",
+    "true_physics_mass": 4.173987202346325
+  },
+  {
+    "ai_name": "CharClass_Sage_DiseasedScaylion",
+    "body_mass": 90.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Char_Skaylion_Physics",
+    "true_physics_mass": 4.173987202346325
+  },
+  {
+    "ai_name": "CharClass_Sage_ScaylionBug",
+    "body_mass": 90.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Char_Skaylion_Physics",
+    "true_physics_mass": 4.173987202346325
+  },
+  {
+    "ai_name": "CharClass_Sage_ScaylionQueen",
+    "body_mass": 90.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Char_Skaylion_Physics",
+    "true_physics_mass": 4.173987202346325
+  },
+  {
+    "ai_name": "CharClass_Orchid_LoaderHOT",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_BattleDroid",
+    "true_physics_mass": 35.13369661569595
+  },
+  {
+    "ai_name": "CharClass_Assassin2",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Nomad",
+    "true_physics_mass": 320.68330934271216
+  },
+  {
+    "ai_name": "CharClass_Assassin1",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Maurauder",
+    "true_physics_mass": 50.369970470666885
+  },
+  {
+    "ai_name": "CharClass_ShirtlessMan",
+    "body_mass": 100.0,
+    "draw_scale": 1.0,
+    "phys_asset": "Phat_Maurauder",
+    "true_physics_mass": 50.33238083124161
+  }
+]

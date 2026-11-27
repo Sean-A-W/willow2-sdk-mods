@@ -1,0 +1,16 @@
+[project]
+name = "Telekinesis"
+version = "0.1.0"
+authors = [{ name = "sean" }]
+description = "<font size='20' color='#ff6600'>Telekinesis</font><br>Replaces the Siren's Phaselock with telekinesis. Lift enemies and loot toward your crosshair, held at capture distance. Press the skill button again to drop them."
+dependencies = [
+    "uemath >= 1.0",
+]
+
+[tool.sdkmod]
+name = "Telekinesis"
+license = {name = "MIT", url = "https://choosealicense.com/licenses/mit/"}
+version = "0.1.0"
+supported_games = ["BL2"]
+coop_support = "Unknown"
+download = "https://github.com/sean-a-w/willow2-sdk-mods/releases/download/latest/Telekinesis.sdkmod"

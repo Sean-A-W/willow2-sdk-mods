@@ -1,0 +1,62 @@
+[
+  {
+    "dmg_name": "WillowDmgSource_Grenade",
+    "first_enemy": "CharClass_MarauderPsycho",
+    "first_mag": 69999.99744807153
+  },
+  {
+    "dmg_name": "WillowDmgSource_Shotgun",
+    "first_enemy": "CharClass_NomadBadass",
+    "first_mag": 1100.0000628402036
+  },
+  {
+    "dmg_name": "WillowDmgSource_Melee",
+    "first_enemy": "CharClass_MarauderPsycho",
+    "first_mag": 90000.0007089453
+  },
+  {
+    "dmg_name": "WillowDmgSource_Rocket",
+    "first_enemy": "CharClass_MarauderPsycho",
+    "first_mag": 9999.999030464049
+  },
+  {
+    "dmg_name": "WillowDmgSource_Pistol",
+    "first_enemy": "CharClass_MarauderPsycho",
+    "first_mag": 799.9999970040913
+  },
+  {
+    "dmg_name": "WillowDmgSource_VehicleRanInto",
+    "first_enemy": "CharClass_SkagPup",
+    "first_mag": 569.8854012502552
+  },
+  {
+    "dmg_name": "WillowDmgSource_SubMachineGun",
+    "first_enemy": "CharClass_Psycho",
+    "first_mag": 500.00001577215505
+  },
+  {
+    "dmg_name": "WillowDmgSource_MachineGun",
+    "first_enemy": "CharClass_MidgetShield2",
+    "first_mag": 500.0000559616991
+  },
+  {
+    "dmg_name": "WillowDmgSource_Bullet",
+    "first_enemy": "CharClass_Psycho",
+    "first_mag": 1827.8374720297652
+  },
+  {
+    "dmg_name": "WillowDmgSource_VehicleRanOver",
+    "first_enemy": "CharClass_SpiderantWarrior",
+    "first_mag": 483.3977037925617
+  },
+  {
+    "dmg_name": "WillowDmgSource_Sniper",
+    "first_enemy": "CharClass_SpiderantChubby",
+    "first_mag": 1000.0000433132569
+  },
+  {
+    "dmg_name": "WillowDmgSource_MeleeWithBlade",
+    "first_enemy": "CharClass_Nomad",
+    "first_mag": 9999.999988181353
+  }
+]
