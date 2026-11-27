@@ -30,13 +30,13 @@
 `Rate=0` doesn't work (engine skips the animation entirely). Use:
 ```python
 node.PlayCustomAnim(
-    'Phase_Lock_Lift',
-    Rate=0.001,         # near-zero but nonzero
+    "Phase_Lock_Lift",
+    Rate=0.001,  # near-zero but nonzero
     BlendInTime=0.15,
     BlendOutTime=99.0,  # huge -- never blends out
     bLooping=True,
     bOverride=True,
-    StartTime=0.40,     # hand-extended pose
+    StartTime=0.40,  # hand-extended pose
 )
 # Then seek to exact frame:
 seq = node.GetCustomAnimNodeSeq()
@@ -288,9 +288,9 @@ that stops ALL sounds on the pawn.
 On release, the grab animation plays in **reverse** from the freeze point back to frame 0.
 `PlayCustomAnim`'s Rate parameter does NOT visually reverse the animation. Instead:
 ```python
-node.PlayCustomAnim('Phase_Lock_Lift', 0.001, 0.0, 0.2, False, True, freeze)
+node.PlayCustomAnim("Phase_Lock_Lift", 0.001, 0.0, 0.2, False, True, freeze)
 seq = node.GetCustomAnimNodeSeq()
-seq.Rate = -1.0              # set negative rate on underlying AnimNodeSequence
+seq.Rate = -1.0  # set negative rate on underlying AnimNodeSequence
 seq.SetPosition(freeze, False)  # start from freeze point
 ```
 The hand retracts back to idle over ~0.4s, paired with the Collapse sound.

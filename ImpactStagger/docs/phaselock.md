@@ -104,12 +104,18 @@ if phaselock.ACTIVE_PHASELOCK is not None and phaselock.phaselock_well_enabled.v
     if phaselock.ACTIVE_PHASELOCK is not None:
         if current_time - _phaselock_scan_time >= 0.25:
             _phaselock_scan_time = current_time
-            phaselock.scan_and_capture(current_time, RAGDOLLED_PAWNS, log, can_ragdoll, _pawn_uid, PENDING_IMPULSE)
+            phaselock.scan_and_capture(
+                current_time, RAGDOLLED_PAWNS, log, can_ragdoll, _pawn_uid, PENDING_IMPULSE
+            )
 ```
 
 #### `need_time` Gate
 ```python
-need_time = singularity.ACTIVE_WELLS or bowling.bowling_enabled.value or phaselock.ACTIVE_PHASELOCK is not None
+need_time = (
+    singularity.ACTIVE_WELLS
+    or bowling.bowling_enabled.value
+    or phaselock.ACTIVE_PHASELOCK is not None
+)
 ```
 
 #### Protection Checks
